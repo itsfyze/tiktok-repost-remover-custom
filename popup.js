@@ -12,6 +12,14 @@ function error(message) { $("error").textContent = message || ""; $("error").hid
 function render(result) {
   connected = !!result.connected;
   current = result.state || result.checkpoint || null;
+  if (connected && current?.version !== "1.0.1") {
+    connected = false;
+    current = null;
+    $("connection").textContent = "Refresh TikTok to finish the update";
+    $("dot").classList.remove("on");
+    controls();
+    throw new Error("Extension updated to 1.0.1. Refresh the connected TikTok tab, click Connect, and scan again before removing anything.");
+  }
   $("connection").textContent = connected ? (current?.account ? "TikTok account identified" : "TikTok tab connected · scan to check account") : "Not connected";
   $("dot").classList.toggle("on", connected);
   if (!current) { controls(); return; }
@@ -42,7 +50,8 @@ function render(result) {
   if (awaiting && renderedNonce !== current.batch.nonce) {
     renderedNonce = current.batch.nonce;
     $("ack").checked = false;
-    $("approval-summary").textContent = `${current.batch.size} repost(s), ${current.settings.delay}s minimum between requests. Only the video IDs below are approved.`;
+    $("approval-summary").textContent = `${current.batch.size} repost(s), ${current.settings.delay}s minimum between requests. Only the video IDs below are approved.`
+      + (current.batch.partial ? " This scan is partial: your full repost total is unknown. Missing videos will not be marked removed unless a complete verification confirms it." : "");
     $("video-list").replaceChildren();
     for (const id of current.batch.ids) {
       const item = current.items.find((entry) => entry.id === id);
@@ -61,7 +70,7 @@ function controls() {
   const active = ["scanning", "removing", "verifying", "paused"].includes(phase);
   $("connect").disabled = busy || (connected && active);
   $("scan").disabled = busy || !connected || active || Date.now() < (current?.cooldownUntil || 0);
-  $("prepare").disabled = busy || !connected || !current?.complete || active || !current?.items?.length || phase === "awaiting";
+  $("prepare").disabled = busy || !connected || !(current?.complete || current?.partial) || active || !current?.actionable || phase === "awaiting";
   $("pause").disabled = busy || !connected || !["scanning", "removing", "verifying"].includes(phase);
   $("resume").disabled = busy || !connected || phase !== "paused";
   $("stop").disabled = busy || !connected || (!active && phase !== "awaiting");

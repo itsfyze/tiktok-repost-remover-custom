@@ -6,6 +6,7 @@ const moduleRoot = process.env.PLAYWRIGHT_MODULE || "playwright";
 const { chromium } = require(moduleRoot);
 const root = path.resolve(__dirname, "..");
 const output = path.resolve(process.env.TEST_OUTPUT || path.join(root, "../runtime-validation"));
+const partialFixture = process.env.REPOST_PARTIAL_FIXTURE === "1";
 fs.mkdirSync(output, { recursive: true });
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
@@ -21,7 +22,10 @@ fs.mkdirSync(output, { recursive: true });
       requests.push({ host: url.hostname, path: url.pathname, method: request.method() });
       assert.equal(url.origin, "https://www.tiktok.com", "Unexpected network destination in isolated test");
       if (url.pathname === "/@fixture") return route.fulfill({ contentType: "text/html", body: '<!doctype html><title>Mock TikTok — no account</title><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">{"__DEFAULT_SCOPE__":{"webapp.app-context":{"user":{"secUid":"fixture-account"},"csrfToken":"fixture-only"}}}</script><h1>Mock account only</h1>' });
-      if (url.pathname === "/api/repost/item_list/") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ status_code: 0, itemList: remaining, hasMore: false, cursor: "0" }) });
+      if (url.pathname === "/api/repost/item_list/") return route.fulfill({ contentType: "application/json", body: JSON.stringify(
+        partialFixture && url.searchParams.get("cursor") === "30" ? { status_code: 0 }
+          : { status_code: 0, itemList: remaining, hasMore: partialFixture, cursor: partialFixture ? "30" : "0" }
+      ) });
       if (url.pathname === "/tiktok/v1/upvote/delete") {
         assert.equal(request.method(), "POST"); assert.equal(request.headers()["tt-csrf-token"], "fixture-only"); posts++;
         remaining = remaining.filter((item) => item.id !== url.searchParams.get("item_id"));
@@ -63,7 +67,7 @@ fs.mkdirSync(output, { recursive: true });
     await popup.goto("file:///" + path.join(root, "popup.html").replaceAll("\\", "/"));
     await popup.getByRole("button", { name: "Connect", exact: true }).click();
     await popup.getByRole("button", { name: "Scan reposts · dry run", exact: true }).click();
-    await popup.waitForFunction(() => document.getElementById("phase").textContent === "ready");
+    await popup.waitForFunction((phase) => document.getElementById("phase").textContent === phase, partialFixture ? "partial" : "ready");
     assert.equal(posts, 0);
     assert.equal(await tiktok.evaluate(() => typeof globalThis.RepostAgent), "undefined");
     await tiktok.evaluate(() => { window.dispatchEvent(new CustomEvent("trr-remove-repost", { detail: { itemId: "1000000000000000001" } })); window.postMessage({ type: "approve", nonce: "forged" }, "*"); });
@@ -73,22 +77,37 @@ fs.mkdirSync(output, { recursive: true });
     assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await popup.screenshot({ path: path.join(output, "popup-narrow.png"), fullPage: true });
     await popup.setViewportSize({ width: 900, height: 1200 });
+    if (partialFixture) {
+      assert.equal(await popup.locator("#total").textContent(), "2+");
+      assert.equal(await popup.locator("#remaining").textContent(), "—");
+      await popup.locator("#limit").selectOption("custom");
+      await popup.locator("#custom").fill("1");
+    }
     await popup.getByRole("button", { name: "Start removing…", exact: true }).click();
     assert.equal(posts, 0);
     assert.equal(await popup.getByRole("button", { name: "Confirm removal", exact: true }).isDisabled(), true);
+    if (partialFixture) assert.match(await popup.locator("#approval-summary").textContent(), /scan is partial/);
     await popup.locator("#ack").check();
     // Synthetic JS events cannot confirm even with checkbox selected.
     await popup.locator("#approve").evaluate((button) => button.click());
     assert.equal(posts, 0);
     await popup.screenshot({ path: path.join(output, "batch-review.png"), fullPage: true });
     await popup.getByRole("button", { name: "Confirm removal", exact: true }).click();
-    await popup.waitForFunction(() => document.getElementById("phase").textContent === "ready", { timeout: 20000 });
-    assert.equal(posts, 2);
-    assert.equal(await popup.locator("#removed").textContent(), "2");
-    assert.equal(await popup.locator("#remaining").textContent(), "0");
-    assert.equal(await popup.locator("#percentage").textContent(), "100%");
+    await popup.waitForFunction((phase) => document.getElementById("phase").textContent === phase, partialFixture ? "partial" : "ready", { timeout: 30000 });
+    assert.equal(posts, partialFixture ? 1 : 2);
+    assert.equal(await popup.locator("#removed").textContent(), partialFixture ? "0" : "2");
+    assert.equal(await popup.locator("#remaining").textContent(), partialFixture ? "—" : "0");
+    if (partialFixture) {
+      assert.equal(await popup.locator("#failed").textContent(), "0 / 1");
+      await popup.getByRole("button", { name: "Start removing…", exact: true }).click();
+      assert.equal(await popup.locator("#video-list li").count(), 1);
+      assert.match(await popup.locator("#video-list").textContent(), /1000000000000000002/);
+      assert.doesNotMatch(await popup.locator("#video-list").textContent(), /1000000000000000001/);
+      assert.equal(posts, 1);
+    }
+    else assert.equal(await popup.locator("#percentage").textContent(), "100%");
     assert.deepEqual(errors, []);
-    const result = { passed: true, browser: await browser.version(), mode: "Real Chrome isolated-world and popup integration; mocked Chrome extension APIs and TikTok network. No extension installed and no real TikTok requests.", checks: ["read-only scan", "real isolated world hidden from page", "hostile DOM events cannot remove", "extension popup review", "synthetic confirmation rejected", "trusted user click approves exact fixture IDs", "authenticated mock headers", "verification and counters", "no popup console errors"], requests, posts, errors };
+    const result = { passed: true, partialFixture, browser: await browser.version(), mode: "Real Chrome isolated-world and popup integration; mocked Chrome extension APIs and TikTok network. No extension installed and no real TikTok requests.", checks: ["read-only scan", "real isolated world hidden from page", "hostile DOM events cannot remove", "extension popup review", "synthetic confirmation rejected", "trusted user click approves exact fixture IDs", "authenticated mock headers", "verification and counters", "no popup console errors", ...(partialFixture ? ["later malformed page preserves known candidates", "partial scan approval warning", "unknown total stays unknown", "partial verification never proves absence", "next batch excludes uncertain IDs and needs fresh approval"] : [])], requests, posts, errors };
     fs.writeFileSync(path.join(output, "browser-results.json"), JSON.stringify(result, null, 2));
     console.log(JSON.stringify(result, null, 2));
   } finally { await browser.close(); }

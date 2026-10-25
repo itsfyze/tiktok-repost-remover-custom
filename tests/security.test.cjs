@@ -110,9 +110,101 @@ test("empty, non-JSON and oversized responses never count as success", async () 
   }
 });
 test("strict listing schema, numeric IDs, cursor loops and incomplete pagination", async () => {
-  for (const data of [ { status_code: 0 }, { status_code: 0, itemList: [], hasMore: "false" }, { status_code: 0, itemList: [item("bad-id")], hasMore: false }, { status_code: 0, itemList: [], hasMore: true, cursor: null }, { status_code: 0, itemList: [], hasMore: true, cursor: "0" } ]) {
+  for (const data of [ { status_code: 0 }, { status_code: 0, itemList: [], hasMore: "unknown" }, { status_code: 0, itemList: [item("bad-id")], hasMore: false }, { status_code: 0, itemList: [], hasMore: true, cursor: null }, { status_code: 0, itemList: [], hasMore: true, cursor: "0" } ]) {
     const h = harness({ fetch: async () => json(data) }); h.engine.scan({}); await h.engine.running; assert.equal(h.engine.state.complete, false); assert.equal(h.engine.state.phase, "error"); assert.throws(() => h.engine.prepare({}));
   }
+});
+test("2487 valid reposts survive a later malformed listing and require fresh batch approval", async () => {
+  const videos = Array.from({ length: 2487 }, (_, index) => item(String(index + 1)));
+  const pages = [listing(videos, true, "30"), json({ status_code: 0 })];
+  let posts = 0;
+  const h = harness({ fetch: async (url, options) => { if (options.method === "POST") posts++; return pages.shift(); } });
+  h.engine.scan({}); await h.engine.running;
+  assert.equal(h.engine.state.phase, "partial"); assert.equal(h.engine.state.items.length, 2487);
+  assert.equal(h.engine.state.complete, false); assert.equal(h.engine.snapshot().remaining, null);
+  const s = h.engine.prepare({ limit: 5, delay: 3 }); assert.deepEqual(s.batch.ids, ["1", "2", "3", "4", "5"]); assert.equal(s.batch.partial, true); assert.equal(posts, 0);
+  assert.throws(() => h.engine.approve("forged"), { code: "UNAUTHORIZED" }); assert.equal(posts, 0);
+});
+test("explicit string and numeric pagination flags have boolean semantics", async () => {
+  for (const value of [false, 0, "0", "false"]) {
+    let calls = 0; const h = harness({ fetch: async () => { calls++; return listing([item("1")], value); } });
+    h.engine.scan({}); await h.engine.running; assert.equal(h.engine.state.complete, true); assert.equal(calls, 1);
+  }
+  for (const value of [true, 1, "1", "true"]) {
+    const pages = [listing([item("1")], value, "30"), listing([item("2")])]; const h = harness({ fetch: async () => pages.shift() });
+    h.engine.scan({}); await h.engine.running; assert.equal(h.engine.state.complete, true); assert.equal(h.engine.state.items.length, 2);
+  }
+});
+test("valid items with a missing flag remain partial, never a fabricated complete total", async () => {
+  const h = harness({ fetch: async () => json({ status_code: 0, itemList: [item("1")] }) }); h.engine.scan({}); await h.engine.running;
+  assert.equal(h.engine.state.partial, true); assert.equal(h.engine.state.complete, false); assert.equal(h.engine.snapshot().actionable, 1);
+});
+test("invalid individual IDs are excluded while known valid IDs can be approved", async () => {
+  const h = harness({ fetch: async () => listing([item("1"), item("bad-id"), null, item("2")]) }); h.engine.scan({}); await h.engine.running;
+  assert.equal(h.engine.state.partial, true); assert.deepEqual(h.engine.prepare({ limit: 5 }).batch.ids, ["1", "2"]);
+  await assert.rejects(h.engine.request("/tiktok/v1/upvote/delete", { item_id: "bad-id" }, "POST"), { code: "UNAUTHORIZED" });
+});
+test("pagination loop preserves validated results without retrying a cursor", async () => {
+  let calls = 0; const h = harness({ fetch: async () => { calls++; return listing([item("1")], true, "0"); } });
+  h.engine.scan({}); await h.engine.running; assert.equal(calls, 1); assert.equal(h.engine.state.phase, "partial"); assert.deepEqual(h.engine.prepare({}).batch.ids, ["1"]);
+});
+test("late session, rate-limit, server and TikTok errors cannot authorize partial removal", async () => {
+  for (const response of [json({}, 401), json({}, 403), json({}, 429), json({}, 500), json({ status_code: 123 })]) {
+    const pages = [listing([item("1")], true, "30"), response]; const h = harness({ fetch: async () => pages.shift() });
+    h.engine.scan({}); await h.engine.running;
+    assert.equal(h.engine.state.partial, false); assert.equal(h.engine.state.complete, false); assert.throws(() => h.engine.prepare({}));
+    assert.equal(h.engine.approval, null);
+  }
+});
+test("late raw challenge/empty/non-JSON responses cannot authorize partial removal", async () => {
+  for (const raw of ["<html>challenge</html>", "", "not json"]) {
+    const pages = [listing([item("1")], true, "30"), { ok: true, status: 200, text: async () => raw }]; const h = harness({ fetch: async () => pages.shift() });
+    h.engine.scan({}); await h.engine.running; assert.equal(h.engine.state.partial, false); assert.throws(() => h.engine.prepare({}));
+  }
+});
+test("a partial candidate batch can be deleted and fully verified after explicit approval", async () => {
+  const h = harness(); let first = true;
+  h.engine.fetch = async (url, options) => {
+    if (options.method === "POST") { h.remaining.delete(new URL(url).searchParams.get("item_id")); return json({ status_code: 0 }); }
+    if (first) { first = false; return json({ status_code: 0, itemList: [...h.remaining.values()] }); }
+    return listing([...h.remaining.values()]);
+  };
+  h.engine.scan({}); await h.engine.running; assert.equal(h.engine.state.partial, true);
+  await approved(h); assert.equal(h.engine.snapshot().removed, 1); assert.equal(h.engine.state.complete, true); assert.equal(h.engine.state.partial, false);
+});
+test("partial verification never proves absence and does not retry uncertain IDs", async () => {
+  const h = await scanned();
+  h.engine.fetch = async (url, options) => {
+    if (options.method === "POST") return json({ status_code: 0 });
+    return json({ status_code: 0, itemList: [item("2")] });
+  };
+  await approved(h); assert.equal(h.engine.state.partial, true); assert.equal(h.engine.snapshot().removed, 0); assert.equal(h.engine.snapshot().uncertain, 1);
+  assert.deepEqual(h.engine.prepare({ limit: 5 }).batch.ids, ["2"]);
+  h.engine.state.items.push({ id: "1", desc: "", author: "" });
+  assert.deepEqual(h.engine.prepare({ limit: 5 }).batch.ids, ["2"]);
+});
+test("uncertain history is not promoted to removed by absence from a partial rescan", async () => {
+  const h = harness({ fetch: async () => json({ status_code: 0, itemList: [item("2")] }) });
+  h.engine.state.outcomes["1"] = { status: "uncertain" }; h.engine.scan({}); await h.engine.running;
+  assert.equal(h.engine.snapshot().removed, 0); assert.equal(h.engine.snapshot().uncertain, 1);
+});
+test("a present item is positively identified even in partial verification", async () => {
+  const h = await scanned(); h.engine.fetch = async (url, options) => options.method === "POST" ? json({ status_code: 0 }) : json({ status_code: 0, itemList: [item("1")] });
+  await approved(h); assert.equal(h.engine.snapshot().failed, 1); assert.equal(h.engine.snapshot().removed, 0);
+});
+test("stop and checkpoint restore revoke partial removal eligibility", async () => {
+  const h = harness({ fetch: async () => json({ status_code: 0, itemList: [item("1")] }) }); h.engine.scan({}); await h.engine.running; assert.equal(h.engine.state.partial, true);
+  const fresh = harness(); fresh.engine.restore({ schema: 1, state: h.saved.at(-1) }); assert.equal(fresh.engine.state.partial, false); assert.throws(() => fresh.engine.prepare({}));
+  await h.engine.stop(); assert.equal(h.engine.state.partial, false); assert.throws(() => h.engine.prepare({}));
+});
+test("a new failed scan cannot authorize stale candidates from the previous scan", async () => {
+  const h = await scanned(); h.engine.fetch = async () => json({ status_code: 0 }); h.engine.scan({}); await h.engine.running;
+  assert.equal(h.engine.state.items.length, 0); assert.equal(h.engine.state.partial, false); assert.throws(() => h.engine.prepare({}));
+});
+test("a failed account check at scan start revokes the previous approval immediately", async () => {
+  let ctx = context(); const h = await scanned(harness({ context: () => ctx })); const previous = h.engine.prepare({});
+  ctx = null; assert.throws(() => h.engine.scan({}), { code: "LOGIN" }); ctx = context();
+  assert.equal(h.engine.state.items.length, 0); assert.equal(h.engine.approval, null); assert.throws(() => h.engine.approve(previous.batch.nonce)); assert.throws(() => h.engine.prepare({}));
 });
 test("multi-page scan deduplicates IDs and handles empty intermediate page", async () => {
   const pages = [listing([item("1")], true, "30"), listing([], true, "60"), listing([item("1"), item("2")])];

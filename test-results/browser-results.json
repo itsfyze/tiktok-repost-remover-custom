@@ -1,5 +1,6 @@
 {
   "passed": true,
+  "partialFixture": false,
   "browser": "155.0.8059.85",
   "mode": "Real Chrome isolated-world and popup integration; mocked Chrome extension APIs and TikTok network. No extension installed and no real TikTok requests.",
   "checks": [

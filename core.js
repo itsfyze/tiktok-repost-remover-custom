@@ -6,6 +6,11 @@
   const validId = (id) => typeof id === "string" && /^\d{1,25}$/.test(id);
   const fault = (code, message, extra = {}) => Object.assign(new Error(message), { code }, extra);
   const clone = (value) => JSON.parse(JSON.stringify(value));
+  const hasMoreFlag = (value) => {
+    if ([true, 1, "1", "true"].includes(value)) return true;
+    if ([false, 0, "0", "false"].includes(value)) return false;
+    return null;
+  };
   function settings(input = {}) {
     const delay = Number(input.delay ?? 5);
     const limit = Number(input.limit ?? 5);
@@ -32,16 +37,18 @@
       this.approval = null;
       this.account = null;
       this.persistTail = Promise.resolve();
-      this.state = { phase: "idle", message: "Connect to your TikTok profile, then scan. No removals start automatically.", items: [], outcomes: {}, total: 0, scanned: 0, complete: false, account: null, settings: settings(), batch: null, lastBatch: null, cooldownUntil: 0, updatedAt: Date.now() };
+      this.state = { phase: "idle", message: "Connect to your TikTok profile, then scan. No removals start automatically.", items: [], outcomes: {}, total: 0, scanned: 0, complete: false, partial: false, scanWarning: "", account: null, settings: settings(), batch: null, lastBatch: null, cooldownUntil: 0, updatedAt: Date.now() };
     }
     snapshot() {
       const state = clone(this.state);
+      state.version = "1.0.1";
       const outcomes = Object.values(state.outcomes);
       state.removed = outcomes.filter((o) => o.status === "verified_removed").length;
       state.failed = outcomes.filter((o) => o.status === "failed").length;
       state.uncertain = outcomes.filter((o) => o.status === "uncertain").length;
       state.remaining = state.complete ? state.items.length : null;
       state.activeRequests = this.active.size;
+      state.actionable = state.items.filter((item) => !["in_flight", "accepted", "uncertain"].includes(state.outcomes[item.id]?.status)).length;
       return state;
     }
     async save() {
@@ -145,24 +152,37 @@
       let cursor = "0";
       const cursors = new Set();
       const items = new Map();
-      for (let page = 0; page < 2000; page++) {
-        await this.runnable();
-        if (cursors.has(cursor)) throw fault("PAGINATION", "TikTok repeated a cursor. Scan incomplete; removal is disabled.");
-        cursors.add(cursor);
-        const data = await this.request("/api/repost/item_list/", { aid: "1988", count: "30", coverFormat: "2", cursor, needPinnedItemIds: "true", post_item_list_request_type: "0", secUid: this.account });
-        if (!Array.isArray(data.itemList) || ![true, false, 0, 1].includes(data.hasMore)) throw fault("SCHEMA", "Unexpected TikTok listing format. Scan incomplete; removal is disabled.");
-        for (const item of data.itemList) {
-          if (!item || !validId(item.id)) throw fault("SCHEMA", "Unexpected video identifier. Scan incomplete; removal is disabled.");
-          items.set(item.id, { id: item.id, desc: String(item.desc || "").slice(0, 4000), author: String(item.author?.uniqueId || "").slice(0, 100) });
+      try {
+        for (let page = 0; page < 2000; page++) {
+          await this.runnable();
+          if (cursors.has(cursor)) throw fault("PAGINATION", "TikTok repeated a pagination cursor.");
+          cursors.add(cursor);
+          const data = await this.request("/api/repost/item_list/", { aid: "1988", count: "30", coverFormat: "2", cursor, needPinnedItemIds: "true", post_item_list_request_type: "0", secUid: this.account });
+          if (!Array.isArray(data.itemList)) throw fault("LIST_FORMAT", "TikTok returned a page without a recognized video list.");
+          let invalidItems = 0;
+          for (const item of data.itemList) {
+            if (!item || !validId(item.id)) { invalidItems++; continue; }
+            items.set(item.id, { id: item.id, desc: String(item.desc || "").slice(0, 4000), author: String(item.author?.uniqueId || "").slice(0, 100) });
+          }
+          this.state.scanned = items.size;
+          if (this.state.phase !== "verifying") this.state.message = `Scanning page ${page + 1} · ${items.size} unique reposts`;
+          if (invalidItems) throw fault("LIST_FORMAT", "TikTok returned video entries with missing or invalid identifiers. Those entries were excluded.");
+          const hasMore = hasMoreFlag(data.hasMore);
+          if (hasMore == null) throw fault("LIST_FORMAT", "TikTok returned an unrecognized pagination flag.");
+          if (!hasMore) return { items: [...items.values()], complete: true, warning: "" };
+          if (data.cursor == null || !/^\d{1,40}$/.test(String(data.cursor))) throw fault("PAGINATION", "TikTok returned a missing or invalid pagination cursor.");
+          cursor = String(data.cursor);
+          await this.wait(this.state.settings.delay * 1000);
         }
-        this.state.scanned = items.size;
-        if (this.state.phase !== "verifying") this.state.message = `Scanning page ${page + 1} · ${items.size} unique reposts`;
-        if (!data.hasMore) return [...items.values()];
-        if (data.cursor == null || !/^\d{1,40}$/.test(String(data.cursor))) throw fault("PAGINATION", "Missing or invalid TikTok cursor. Scan incomplete.");
-        cursor = String(data.cursor);
-        await this.wait(this.state.settings.delay * 1000);
+        throw fault("PAGINATION", "Scan page safety limit reached.");
+      } catch (error) {
+        this.check();
+        // Only structurally invalid successful listings permit partial use.
+        // Session/security, HTTP, rate-limit, transport, raw JSON and cancellation
+        // errors still abort the job and revoke removal eligibility.
+        if (!["LIST_FORMAT", "PAGINATION"].includes(error.code) || !items.size) throw error;
+        return { items: [...items.values()], complete: false, warning: error.message };
       }
-      throw fault("PAGINATION", "Scan page safety limit reached. Removal is disabled.");
     }
     launch(task) {
       if (this.running) throw fault("BUSY", "Another operation is already running.");
@@ -176,14 +196,23 @@
         this.state.phase = error.code === "CANCELLED" ? "stopped" : error.code === "RATE_LIMIT" ? "rate_limited" : "error";
         this.state.message = error.message;
         this.state.complete = false;
+        this.state.partial = false;
         if (error.until) this.state.cooldownUntil = error.until;
         await this.save();
-      }).catch(() => { this.state.phase = "error"; this.state.message = "Local checkpoint failed. Rescan before continuing."; this.approval = null; this.state.complete = false; }).finally(() => { this.running = null; });
+      }).catch(() => { this.state.phase = "error"; this.state.message = "Local checkpoint failed. Rescan before continuing."; this.approval = null; this.state.complete = false; this.state.partial = false; }).finally(() => { this.running = null; });
     }
     scan(input) {
       if (this.running) throw fault("BUSY", "Stop the current operation before scanning again.");
       if (Date.now() < this.state.cooldownUntil) throw fault("COOLDOWN", "TikTok cooldown is still active. Wait before scanning again.");
       this.state.settings = settings(input);
+      // Revoke an older scan/approval before checking current account context.
+      // A failed new scan must never leave an earlier batch authorized.
+      this.state.complete = false;
+      this.state.partial = false;
+      this.state.scanWarning = "";
+      this.state.items = [];
+      this.state.batch = null;
+      this.approval = null;
       const ctx = this.context();
       this.account = null;
       this.identity();
@@ -192,38 +221,44 @@
       this.state.account = this.account;
       this.state.phase = "scanning";
       this.state.message = "Read-only scan started. No deletions are authorized.";
-      this.state.complete = false;
-      this.state.batch = null;
       this.state.lastBatch = null;
-      this.approval = null;
       this.state.scanned = 0;
       this.launch(async () => {
-        const items = await this.collect();
+        const listing = await this.collect();
+        const items = listing.items;
         this.check();
         this.state.items = items;
         this.state.total = items.length;
         const remaining = new Set(items.map((item) => item.id));
         for (const [id, result] of Object.entries(this.state.outcomes)) {
-          if (["in_flight", "uncertain", "accepted"].includes(result.status)) result.status = remaining.has(id) ? "failed" : "verified_removed";
+          if (["in_flight", "uncertain", "accepted"].includes(result.status)) {
+            if (remaining.has(id)) result.status = "failed";
+            else result.status = listing.complete ? "verified_removed" : "uncertain";
+          }
         }
-        this.state.complete = true;
-        this.state.phase = "ready";
-        this.state.message = `Scan complete · ${items.length} reposts currently listed. Review and approve a batch to remove any.`;
+        this.state.complete = listing.complete;
+        this.state.partial = !listing.complete;
+        this.state.scanWarning = listing.warning;
+        this.state.phase = listing.complete ? "ready" : "partial";
+        this.state.message = listing.complete
+          ? `Scan complete · ${items.length} reposts currently listed. Review and approve a batch to remove any.`
+          : `Partial scan · ${items.length} validated reposts retained; your full total is unknown. You can review and approve a batch from these results. ${listing.warning}`;
         await this.save();
       });
       return this.snapshot();
     }
     prepare(input) {
-      if (this.running || !this.state.complete || !["ready", "awaiting"].includes(this.state.phase)) throw fault("NOT_READY", "Complete a fresh scan first.");
+      if (this.running || !(this.state.complete || this.state.partial) || !["ready", "partial", "awaiting"].includes(this.state.phase)) throw fault("NOT_READY", "Scan for valid reposts first. Errors affecting authentication or security must be resolved before removal.");
       this.identity();
       const nextSettings = settings(input);
       const words = nextSettings.keywords.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
-      const ids = this.state.items.filter((item) => !words.length || words.some((word) => item.desc.toLowerCase().includes(word))).slice(0, nextSettings.limit).map((item) => item.id);
-      if (!ids.length) throw fault("EMPTY", "No reposts match this filter.");
+      const ids = this.state.items.filter((item) => !["in_flight", "accepted", "uncertain"].includes(this.state.outcomes[item.id]?.status))
+        .filter((item) => !words.length || words.some((word) => item.desc.toLowerCase().includes(word))).slice(0, nextSettings.limit).map((item) => item.id);
+      if (!ids.length) throw fault("EMPTY", "No eligible reposts match this filter. Uncertain removals require a fresh scan before retrying.");
       this.state.settings = nextSettings;
       const nonce = this.uuid();
       this.approval = { nonce, ids: new Set(ids), started: false, expires: Date.now() + 5 * 60 * 1000 };
-      this.state.batch = { nonce, ids, completed: 0, size: ids.length, expires: this.approval.expires };
+      this.state.batch = { nonce, ids, completed: 0, size: ids.length, partial: this.state.partial, expires: this.approval.expires };
       this.state.phase = "awaiting";
       this.state.message = `Review ${ids.length} exact video IDs. Approval applies to this batch only.`;
       return this.snapshot();
@@ -260,14 +295,22 @@
         this.state.phase = "verifying";
         this.state.message = "Verifying against a fresh complete repost listing…";
         await this.wait(this.state.settings.delay * 1000);
-        const items = await this.collect();
+        const listing = await this.collect();
+        const items = listing.items;
         this.check();
         const remaining = new Set(items.map((item) => item.id));
-        for (const id of batch) this.state.outcomes[id] = { status: remaining.has(id) ? "failed" : "verified_removed", at: Date.now() };
+        for (const id of batch) this.state.outcomes[id] = {
+          // Presence proves remaining; absence proves removal ONLY after full pagination.
+          status: remaining.has(id) ? "failed" : listing.complete ? "verified_removed" : "uncertain", at: Date.now(),
+        };
         this.state.items = items;
-        this.state.complete = true;
-        this.state.phase = "ready";
-        this.state.message = "Batch verified. Another batch always requires a new review and confirmation.";
+        this.state.complete = listing.complete;
+        this.state.partial = !listing.complete;
+        this.state.scanWarning = listing.warning;
+        this.state.phase = listing.complete ? "ready" : "partial";
+        this.state.message = listing.complete
+          ? "Batch verified. Another batch always requires a new review and confirmation."
+          : "Verification was partial: missing videos remain uncertain, not verified removed. You may approve another batch of known videos, excluding uncertain attempts. " + listing.warning;
         this.state.lastBatch = { size: this.state.batch.size, completed: this.state.batch.completed };
         this.state.batch = null;
         await this.save();
@@ -295,6 +338,7 @@
       this.state.batch = null;
       this.state.phase = "stopped";
       this.state.complete = false;
+      this.state.partial = false;
       this.state.message = "Stopped. Pending browser requests were aborted. Actions already accepted by TikTok cannot be reversed. Scan to reconcile before restarting.";
       await this.save();
       return this.snapshot();
