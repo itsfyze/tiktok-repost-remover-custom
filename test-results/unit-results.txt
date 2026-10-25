@@ -1,0 +1,42 @@
+✔ settings enforce safe bounds and defaults (0.7132ms)
+✔ dry scan sends GET only and discovers all items (1.2148ms)
+✔ no request without an authorized job (0.3938ms)
+✔ unknown endpoint and wrong method fail closed (0.1387ms)
+✔ prepare does not delete; approval bound to nonce and IDs (1.1319ms)
+✔ each subsequent batch needs fresh approval (0.5425ms)
+✔ expired approval rejected (0.1798ms)
+✔ keyword filter limits exact IDs and no matches fails closed (0.1792ms)
+✔ account change invalidates an approval before any write (0.3434ms)
+✔ missing account and missing CSRF do not bypass authentication (0.4353ms)
+✔ stop aborts active scan and leaves no request/controller (0.2959ms)
+✔ stop during POST aborts, marks uncertain, and never dispatches next ID (0.4561ms)
+✔ timeout aborts before settling; POST has no overlapping automatic retry (19.0851ms)
+✔ unique request IDs even across batches (0.3397ms)
+✔ rate limit honors Retry-After, halts and requires fresh consent (0.3187ms)
+✔ rate-limit HTTP date and absent header are conservative (1.602ms)
+✔ 401, 403, 500 and TikTok rejection all halt without retries (0.6526ms)
+✔ empty, non-JSON and oversized responses never count as success (0.761ms)
+✔ strict listing schema, numeric IDs, cursor loops and incomplete pagination (0.2766ms)
+✔ multi-page scan deduplicates IDs and handles empty intermediate page (0.144ms)
+✔ repeated Scan and Start cannot create concurrent jobs (0.1978ms)
+✔ pause blocks the next request and resume continues only active job (0.3098ms)
+✔ checkpoint excludes CSRF and approval; restore never starts work (0.2408ms)
+✔ interrupted in-flight request is uncertain and reconciled by rescan (0.2688ms)
+✔ checkpoint write failure prevents dispatch (0.2266ms)
+✔ accepted deletion still listed is marked failed, not removed (0.1806ms)
+✔ verification failure leaves accepted operations uncertain (0.1515ms)
+✔ stop during durable intent checkpoint prevents the pending POST (0.206ms)
+✔ timeout also aborts while waiting for the response body (9.6493ms)
+✔ restored history is cleared on account switch and never authorizes an ID (0.2284ms)
+✔ failed preparation cannot mutate an existing approved batch's settings (0.1293ms)
+✔ worker command serialization retains one tab lease after worker restart (1.4646ms)
+✔ extension message boundary rejects TikTok page and other extension senders (0.7249ms)
+✔ no page-event bridge, remote code, telemetry or unnecessary permissions (1.7665ms)
+ℹ tests 34
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 110.2618

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Repost Reset</title><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header><div class="brand"><img src="icons/icon48.png" width="40" height="40" alt=""><div><h1>Repost Reset</h1><p>Your reposts. Your choice.</p></div></div><button id="expand" class="icon" title="Open dashboard in a tab" aria-label="Open dashboard in a tab">↗</button></header>
+    <div class="connection"><span id="dot" class="dot"></span><span id="connection">Not connected</span><button id="connect" class="small">Connect</button></div>
+    <section class="metrics" aria-label="Repost statistics">
+      <article><span>Reposts at scan</span><strong id="total">—</strong></article>
+      <article><span>Verified removed</span><strong id="removed">0</strong></article>
+      <article><span>Still listed</span><strong id="remaining">—</strong></article>
+      <article><span>Failed / uncertain</span><strong id="failed">0 / 0</strong></article>
+    </section>
+    <section class="card operation"><div class="progress-label"><span id="phase">Ready when you are</span><strong id="percentage">0%</strong></div><progress id="progress" max="100" value="0" aria-label="Current batch progress"></progress><p id="status" role="status" aria-live="polite">Connect to your own TikTok profile, then run a read-only scan.</p><p id="cooldown" class="warning" hidden></p></section>
+    <section class="card"><div class="section-heading"><h2>Batch settings</h2><span class="tag">LOCAL ONLY</span></div>
+      <label for="delay">Delay between requests <span>3–120 seconds</span></label><input id="delay" type="number" min="3" max="120" value="5" step="1">
+      <label for="limit">Maximum removals in the next batch</label><select id="limit"><option>5</option><option>10</option><option>25</option><option>50</option><option>100</option><option value="custom">Custom</option></select>
+      <div id="custom-wrap" hidden><label for="custom">Custom limit <span>1–1000</span></label><input id="custom" type="number" min="1" max="1000" value="5" step="1"></div>
+      <label for="keywords">Only descriptions containing <span>optional</span></label><input id="keywords" type="text" maxlength="500" placeholder="cat, travel, music"><p class="hint">Comma-separated keywords; any match. Leave empty for all reposts.</p>
+      <div class="confirmation-policy"><span>✓</span><p><b>Confirm every batch</b><br>Always on. Approval expires after 5 minutes and never carries into another batch.</p></div>
+    </section>
+    <div class="primary-controls"><button id="scan" class="secondary">Scan reposts · dry run</button><button id="prepare" class="primary">Start removing…</button></div>
+    <div class="transport"><button id="pause">Pause</button><button id="resume">Resume</button><button id="stop" class="danger">Stop</button></div>
+    <p id="error" class="error" role="alert" hidden></p>
+    <section id="approval" class="card approval" hidden><h2>Approve this exact batch</h2><p id="approval-summary"></p><p class="warning">This changes your TikTok account. Requests already accepted by TikTok cannot be reversed.</p><ol id="video-list"></ol><label class="check"><input id="ack" type="checkbox">I reviewed these videos and approve their removal.</label><div class="primary-controls"><button id="cancel-approval">Cancel</button><button id="approve" class="primary" disabled>Confirm removal</button></div></section>
+    <footer>No tracking · No password access · No external servers<br><span>Keep the connected TikTok tab open. After an interruption, scan again; nothing restarts automatically.</span></footer>
+  </main><script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+{
+  "passed": true,
+  "browser": "155.0.8059.85",
+  "mode": "Real Chrome isolated-world and popup integration; mocked Chrome extension APIs and TikTok network. No extension installed and no real TikTok requests.",
+  "checks": [
+    "read-only scan",
+    "real isolated world hidden from page",
+    "hostile DOM events cannot remove",
+    "extension popup review",
+    "synthetic confirmation rejected",
+    "trusted user click approves exact fixture IDs",
+    "authenticated mock headers",
+    "verification and counters",
+    "no popup console errors"
+  ],
+  "requests": [
+    {
+      "host": "www.tiktok.com",
+      "path": "/@fixture",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    }
+  ],
+  "posts": 2,
+  "errors": []
+}
