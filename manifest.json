@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Repost Reset — Personal TikTok Remover",
-  "version": "1.0.1",
+  "version": "1.0.5",
+  "version_name": "1.0.5 reviewed source preview",
   "minimum_chrome_version": "120",
   "description": "Scan TikTok reposts and remove explicitly confirmed batches. Local, private, and source-only.",
   "permissions": ["scripting", "storage"],

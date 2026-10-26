@@ -1,3 +1,4 @@
 Scan starting...
 Scan finished.
-Scanning C:\Users\dominic\Documents\Codex\2026-10-24\ai-agent-task-full-security-audit\custom-extension found no threats.
+Scanning <reviewed-source> found no threats.
+

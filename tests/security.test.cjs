@@ -218,7 +218,7 @@ test("pause blocks the next request and resume continues only active job", async
   const h = await scanned(); const originalFetch = h.engine.fetch;
   let first; const firstDone = new Promise((r) => { first = r; }); let unblock;
   h.engine.sleep = async (ms, signal) => {
-    if (ms === 3000 && !unblock) { h.engine.pause(); first(); await new Promise((r) => { unblock = r; }); }
+    if (ms === 3000 && !unblock && h.calls.some((call) => call.options.method === "POST")) { h.engine.pause(); first(); await new Promise((r) => { unblock = r; }); }
     if (signal.aborted) throw Error("abort");
   };
   h.engine.fetch = originalFetch;
@@ -273,7 +273,7 @@ test("worker command serialization retains one tab lease after worker restart", 
     runtime: { id: "own", getURL: (file) => `chrome-extension://own/${file}`, onMessage: { addListener: (fn) => { listener = fn; } } },
     storage: { session: { get: async (key) => ({ [key]: store[key] }), set: async (data) => Object.assign(store, data) } },
     tabs: { query: async () => { queries++; return [{ id: 42, active: true, url: "https://www.tiktok.com/@fixture" }]; } },
-    scripting: { executeScript: async (input) => { if (input.files) { injections++; return []; } return [{ result: { phase: "removing" } }]; } },
+    scripting: { executeScript: async (input) => { if (input.files) { injections++; return []; } return [{ result: { channel: "repost-reset-reply", ok: true, state: { phase: "removing" } } }]; } },
   };
   const source = fs.readFileSync(path.join(__dirname, "../background.js"), "utf8");
   const send = () => new Promise((resolve) => listener({ type: "connect" }, { id: "own", url: chrome.runtime.getURL("popup.html") }, resolve));

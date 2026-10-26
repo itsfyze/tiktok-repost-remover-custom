@@ -24,7 +24,8 @@
       switch (command.type) {
         case "state": return engine.snapshot();
         case "scan": return engine.scan(command.settings);
-        case "prepare": return engine.prepare(command.settings);
+        case "scanAndRemove": return engine.scanAndRemove(command.settings);
+        case "prepare": return engine.prepareFound(command.settings);
         case "approve": return engine.approve(command.nonce);
         case "pause": return engine.pause();
         case "resume": return engine.resume();

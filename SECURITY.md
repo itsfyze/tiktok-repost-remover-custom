@@ -1,117 +1,72 @@
-# Security review — Repost Reset 1.0.1
+# Security review — Repost Reset 1.0.5
 
-Reviewed 2026-10-24. This is a new implementation, informed by the API behavior in `gabireze/tiktok-all-reposted-videos-remover` at `b37346888f82262f46a25417c1fc68398d6009a0`. The original audited source is unchanged. No precompiled extension was used.
+Reviewed 2026-10-26. Scope: every production/development executable source file in this project, manifest/UI/styles, local persistence, network destinations, authorization and controlled runtime tests. Reference comparison is pinned in UPSTREAM_REFERENCE.md. This is a separate source implementation; no precompiled extension was installed.
 
-## Decision and limits
+## Verdict and limits
 
-Prepared for an unpacked installation review. No significant credential-exfiltration path or page-triggered removal channel was found in the generated production code. Authorization, cancellation, checkpoint and error-handling tests pass with synthetic data. This review does **not** establish that the live TikTok API accepts this implementation, that the browser will always complete a requested abort before the server acts, or that automating thousands of removals is acceptable under TikTok's current account policies.
+“Safe” below means no corresponding malicious path was found in the reviewed source and controlled tests, not an absolute guarantee. No personal profile, real authentication values or live repost action was used.
 
-No normal Chrome profile was modified. Installation, real-account read-only scanning, and real removal are separate steps. No sign-in, personal cookie/token access, or real repost removal occurred. No saved personal browser profile was used by tests.
-
-## Source completeness
-
-All generated production and development executable files were read in full and reviewed after creation. Source is plain readable JavaScript without bundling or minification. Production files:
-
-- `manifest.json`: Manifest V3, two API permissions, one exact HTTPS host, local popup/worker/icons and strict extension CSP.
-- `background.js`: `trustedUI` validates exact extension ID and popup URL, top-frame sender, and own dashboard tab when present; `invoke` runs the local isolated-world agent; `handle` allowlists commands and manages a session tab lease; runtime callback serializes commands and returns bounded errors. No fetch, credential access or page-origin message acceptance.
-- `agent.js`: one-shot isolated initializer; `context` parses the fixed hydration JSON node and extracts only signed-in secUid and CSRF; local `Engine` wiring and storage checkpoint; `command` allowlists operations. No event or runtime-message listener, no page UI, no MAIN-world code. The agent's global object belongs to the isolated world and is invisible to page-world JavaScript.
-- `core.js`: reviewed every Engine method (`constructor`, `snapshot`, `save`, `restore`, `identity`, `check`, `request`, `wait`, `runnable`, `collect`, `launch`, `scan`, `prepare`, `approve`, `pause`, `resume`, `stop`), helper (`validId`, `fault`, `clone`, `settings`, `hasMoreFlag`) and timer/promise/filter/map callback. All network access is centralized in `request`.
-- `popup.js`: reviewed helpers (`$`, `options`, `error`, `render`, `controls`, `send`, `on`), all control/checkbox/select listeners and polling callback. User-supplied descriptions and status use textContent; no HTML insertion. Removal confirmation uses a trusted click in extension origin and a matching in-memory batch capability.
-- `popup.html`: local script/CSS/icon, dashboard, settings, controls and acknowledgement/review section; no forms posting externally or embedded remote content.
-- `styles.css`: local presentation only; no external fonts, URL resources or imports. Reduced-motion preference supported.
-- `icons/icon16.png`, `icon32.png`, `icon48.png`, `icon128.png`: original deterministic PNG assets, not executable.
-
-Development-only files, not registered as extension entry points:
-
-- `tests/security.test.cjs`: Node test runner, assert/fs/path/vm, local source and fake data. All 48 tests and nested stubs/callbacks reviewed. VM evaluates own background source to model a worker, not remotely supplied JavaScript.
-- `tests/browser-smoke.cjs`: uses already installed Playwright and Chrome in a fresh, account-free browser context. Its DevTools calls evaluate this project's local source in a real isolated world. Chrome extension APIs and TikTok responses are mocked. All fixture TikTok traffic is fulfilled by interception, never sent to TikTok. The test does not install an extension or operate a normal browser profile. An ordinary dummy page sends hostile events; it is unrelated to personal accounts.
-- `tools/generate-icons.cjs`: uses built-in fs/path/zlib to draw pixels and encode four PNGs (CRC/chunk helpers). Writes only its local icons directory. No network or subprocess.
-- `README.md`, `SECURITY.md`, `THIRD-PARTY-NOTICE.md`: documentation.
-
-No package.json, lockfile, production library, build step, dependency installation or remote updater is needed. The optional browser test uses existing development tooling and does not add a production dependency.
-
-## Authorization and trust boundaries
-
-1. Chrome owns the extension popup origin. TikTok cannot embed it (CSP frame-ancestors none; no web-accessible resources), manipulate its DOM, read its approval nonce or send accepted messages as it.
-2. UI action handlers require `event.isTrusted`; a DOM-generated click is rejected. The approval also requires the acknowledgement checkbox. This is defense against synthetic clicks, not a claim of protection from OS-level malware or a compromised Chrome process.
-3. The worker accepts messages only from its exact popup page, including the same dashboard opened in an extension tab. TikTok content senders, other extensions and subframes are rejected. No externally_connectable entry is declared.
-4. Connect injects local core/agent files only in ISOLATED world in frame 0 of the selected TikTok tab. There is no page DOM-event bridge, postMessage bridge, or persistent page-world deletion listener.
-5. Prepare requires either a completed scan or a structurally partial scan containing validated IDs. Only successful status_code=0 JSON listing/pagination structural errors allow partial use. Auth/session/rate/transport/JSON errors disable removal. Prepare filters the known IDs, excludes uncertain/in-flight attempts, selects at most the explicit batch limit and records those exact numeric IDs with a crypto.randomUUID capability. Five-minute expiry applies before approval. No deletion occurs during scanning or preparation.
-6. Approve checks the capability, unused status, expiry, account identity, no active loop and the waiting phase. Each POST checks the current account, job state and membership in the allowed ID set again. Successful request authorization is consumed. Repeated Start/Approve cannot create concurrent loops.
-7. One service-worker command queue and one tab lease in chrome.storage.session prevent separate tab jobs while the selected agent remains reachable. The agent loop lives in the TikTok tab, not a service-worker global, so worker suspension does not restart or duplicate it.
-8. Every further batch requires fresh review and approval. An interruption restores no approval or automatic deletion loop. Rescan reconciles history against the current account and current repost listing.
-
-Threat-model limit: scripts already controlling the TikTok page can change its hydration DOM or interfere with the site itself. Chrome renderer compromise, malicious installed extensions, operating-system malware, a malicious TikTok server and a modified local extension folder are outside the protection offered here. The design does not treat page events as authority and does not grant the page a new extension command channel.
-
-## Cancellation and failures
-
-Each fetch receives a new UUID, a separate AbortController and a 20-second timeout covering response headers and body consumption. Controllers are registered in a Map, linked to the job AbortSignal and removed only in finally. Timeout calls abort. Stop aborts the job and **all** tracked controllers, waits for the loop to settle, revokes approval, and disables restart until a scan. Waiting delays are abortable. Checks immediately before dispatch prevent a Stop during a checkpoint write from starting the saved intent.
-
-No POST is automatically retried. Timeouts and transport errors have ambiguous server outcomes; they are marked uncertain and reconciled via read-only listing. This avoids overlapping attempts entirely. Accepted operations become uncertain if verification cannot finish. Only successful complete verification of disappearance increments the verified removal counter. Server-side removal accepted before an abort may still happen and cannot be undone.
-
-Pause blocks subsequent requests and leaves a currently running request alone; the UI says so. Resume is allowed only for a currently live paused loop. A stopped/interrupted job cannot use Resume to recover old authority. On restart, history's in-flight state becomes uncertain and a fresh scan is mandatory.
-
-HTTP 429 stops the job and persists a cooldown: Retry-After seconds/date respected, minimum 60 seconds, fallback one hour if no valid header. There is no automatic deletion restart. HTTP 401/403, nonzero status_code, unexpected schema, HTTP errors and network errors stop. No CAPTCHA, authentication, signature or rate-limit check is bypassed. Delays are configurable 3–120 seconds and do not establish compliance with a published TikTok request budget.
-
-## Authentication and persisted data
-
-- Source: only JSON under `__UNIVERSAL_DATA_FOR_REHYDRATION__`, `webapp.app-context.user.secUid` and `csrfToken`.
-- secUid: public account identifier; used in listing query and local account-bound checkpoint. No developer receives it.
-- CSRF: read transiently immediately before requests, attached only to the fixed TikTok POST header. Not copied into engine state, UI snapshots, errors, tests output or local/session storage.
-- Authentication cookies: the browser supplies eligible cookies using credentials same-origin. No cookie API, document.cookie read, cookie export, password input, password access, bearer-token extraction, localStorage or sessionStorage access exists.
-- Chrome local checkpoint: options, account identifier, IDs/outcomes/timestamps, scan counts, status and cooldown. Full descriptions, approval nonce/set and credentials are excluded. Persistence writes are serialized; failure to save intent stops before dispatch. State may contain personally revealing keyword choices and viewing IDs, so this local data is not public.
-- Chrome session storage: the connected tab ID only. It survives worker suspension, not a browser restart.
-- In-memory scan data: item ID, bounded description and author handle. Displayed as text in the extension UI. No upload or export path.
-
-## Complete request and permission inventory
-
-All production HTTP requests use `https://www.tiktok.com`, `mode: same-origin`, `credentials: same-origin`, `redirect: error`, `cache: no-store`. Cross-origin fetches and redirects are blocked. Two fixed endpoint paths only:
-
-| Endpoint | Method / explicit headers / body | Parameters and purpose |
+| Category | Result | Evidence |
 |---|---|---|
-| `/api/repost/item_list/` | GET; accept application/json; no body | aid=1988, count=30, coverFormat=2, cursor, needPinnedItemIds=true, post_item_list_request_type=0, secUid. Full scan and post-batch verification. |
-| `/tiktok/v1/upvote/delete` | POST; accept application/json; content-type application/x-www-form-urlencoded; tt-csrf-token; empty body | aid=1988, item_id from exact approved ID set. Remove one authorized repost. |
+| Credential theft | Safe within review scope | No password form, cookie read/export, credential harvesting, keylogging, clipboard access or external credential destination. |
+| Session token handling | Safe within review scope | Browser supplies eligible same-origin cookies. Only account secUid and CSRF are extracted from fixed hydration JSON; CSRF is transient and goes only to the fixed TikTok removal header. |
+| External connections | Safe within review scope | Only www.tiktok.com production HTTP host; fixed endpoint allowlist, same-origin mode/credentials, redirect error. No telemetry, CDN, socket, beacon or remote script. |
+| Malicious code | Safe within review scope | Plain local source; no obfuscation, dynamic code loading/eval, persistence outside normal extension storage, mining or unexpected downloads. |
+| Browser permissions | Safe within review scope | scripting, storage and one exact HTTPS host; no tabs/cookies/history/debugger/downloads/clipboard/nativeMessaging permission. |
+| Dependency security | Safe for production dependency surface | No production dependencies, package manager, bundler or build installation. Optional existing Playwright is development-only and not bundled. |
+| Overall risk | Medium | Approved account changes are destructive; TikTok's private API, signing, enforcement and actual live success remain unverified. |
 
-Browser-added cookies/headers are not inspected or logged. Error text never includes response bodies or the token. chrome.runtime.sendMessage only carries UI commands/settings, batch nonce, and snapshots to the own worker. scripting.executeScript invokes local functions/files in the isolated world. No chrome.tabs.sendMessage, XHR, beacon, WebSocket, external image, telemetry, hidden redirect, external donation or remote script path exists. Expand opens only the own local dashboard page.
+No account-theft behavior was identified. This does not establish that every bug is absent or that the live account can safely sustain thousands of operations.
 
-| Permission / policy | Justification |
-|---|---|
-| scripting | Inject local isolated core/agent and invoke their command method in the selected TikTok tab. |
-| storage | Local checkpoint/history/settings; session connected-tab lease. |
-| https://www.tiktok.com/* | Exact HTTPS hostname needed for isolated script and same-origin requests. No wildcard subdomain or unrelated host. |
-| extension CSP | default/script/style/img self; connect none; object none; base-uri none; frame-ancestors none. UI/worker do not fetch externally; TikTok content fetch runs in its page-origin isolated world. |
+## Reviewed files and functions
 
-No tabs permission: querying URLs for matching TikTok tabs is covered by host permission; creating the local dashboard tab needs no tabs permission. No cookies, history, debugger, webRequest, downloads, clipboard, nativeMessaging, management, unlimitedStorage or optional permission.
+- manifest.json: local MV3 worker/popup/icons, strict self-only extension CSP and exact host permissions.
+- background.js: trustedUI, invoke, handle, runtime listener and callbacks. Exact own-extension sender ID/page URL and top frame; command queue and one session tab lease; isolated frame-zero invocation. Tagged command results/errors, compact snapshots, status-only retry. A transient connection error cannot create another tab job.
+- agent.js: initializer, context, Engine wiring/persist/restore promise and command dispatcher. Reads only the fixed hydration JSON node. No MAIN-world or page-event/runtime-message listener is installed in the TikTok page.
+- core.js helpers: validId, fault, clone, hasMoreFlag, successfulStatus, listingParts and settings. Engine methods: constructor, snapshot, isScanning, save, restore, identity, check, checkCooldown, request, wait, runnable, collect, launch, scanAndRemove, scan, prepare, prepareFound, candidates, makeBatch, approve, removeApprovedBatch, finishVerification, pause, resume, stop; all timer/promise/filter/map callbacks.
+- popup.js: options/error/render/controls/send/on, every control listener, dashboard opening and polling. Trusted clicks, explicit acknowledgement, exact batch nonce, bounded command timeout and stale-poll rejection. Untrusted descriptions/errors render as textContent, never HTML.
+- popup.html/styles.css: local presentation, controls/review, no remote fonts, image loads, forms posting externally or CSS imports.
+- tools/generate-icons.cjs: built-in fs/path/zlib and CRC/chunk logic generating four original local PNGs. No network/subprocess.
+- tests/security.test.cjs, streaming.test.cjs, connection.test.cjs, listing-format.test.cjs, review.test.cjs and browser-smoke.cjs: all fixtures, callbacks, VM/CDP use and file access reviewed. VM/CDP evaluate only this project's local source for tests. No normal profile or live TikTok data is used.
+- All documentation, checksums and test-result artifacts were checked for current-version consistency and credential inclusion. Legacy fix notes are marked historical.
 
-## Tests and outcomes
+## Complete request and data-flow inventory
 
-48 automated Node tests pass. They cover settings bounds; GET-only scan; missing authorization; destination/method rejection; approval nonce/ID binding; consumed/repeated/expired approvals; per-batch confirmation; keywords; account changes; missing account/CSRF; active scan/POST abort; timeout with no retry; unique IDs; Retry-After seconds/date/default; 401/403/500 and TikTok rejection; invalid/empty/oversized responses; strict listing schema; numeric IDs; repeated/missing cursor; multi-page deduplication/empty intermediate page; repeated Scan/Start; pause/resume; credential/approval-free checkpoints; restore/reconciliation; storage failure; verification failure/remaining repost; Stop during intent persistence; body timeout; account-switch history isolation; atomic preparation settings; worker command serialization and lease across simulated worker restart; sender rejection; permission and production-source checks. Added regression coverage retains 2,487 known candidates after a malformed later page, accepts explicit string pagination flags, excludes malformed IDs, blocks partial use after security/transport errors, tests partial batch approval, and ensures incomplete verification/reconciliation never proves absence. Stop/restore revoke partial eligibility and starting a new scan clears stale candidates.
+| Destination | Method | Explicit headers/body | Data and reason |
+|---|---|---|---|
+| https://www.tiktok.com/api/repost/item_list/ | GET | accept */*; no body | aid=1988, count=30, coverFormat=2, exact cursor, needPinnedItemIds=true, post_item_list_request_type=0, secUid. Discovery and fresh verification. |
+| https://www.tiktok.com/tiktok/v1/upvote/delete | POST | accept */*, content-type application/x-www-form-urlencoded, tt-csrf-token; empty body | aid=1988 and one numeric item_id from the exact approved set. Remove that repost. |
 
-Real Chrome 155.0.8059.85 integration passes with mocked Chrome APIs/TikTok responses. Verified actual isolated-world separation from main page, hostile DOM events and postMessage cannot remove, popup scan sends no POST, review required, synthetic confirm click rejected, trusted click processes exact fixture IDs, strict synthetic CSRF header, final verification/counters/progress, and no popup page errors. Screenshots were visually reviewed. Narrow popup layout is also checked for horizontal overflow. Artifacts: workspace `runtime-validation/`.
+Both use credentials/mode same-origin, redirect error and cache no-store. Eligible authentication cookies are browser-added, not read, exported or logged. CSRF goes only in the POST header, never URL, UI, errors or checkpoints. secUid is a public account identifier used for query/account binding and local history.
 
-All generated JS/CJS files receive Node syntax checks. Manifest JSON and icon references are validated. A native installed Windows Defender custom scan is recorded in `VALIDATION.txt`; antivirus alone does not assess authorization. No third-party scanner or package installation was introduced.
+chrome.runtime.sendMessage carries internal UI commands/settings, approval nonce and snapshots to the own worker, not to an external domain. chrome.scripting.executeScript invokes local code in the selected isolated world. There is no chrome.tabs.sendMessage, XMLHttpRequest, WebSocket, sendBeacon, remote image beacon, hidden redirect or external upload. The arrow opens only the own extension dashboard.
 
-Not covered by mocks: actual Chrome extension registration, installed permission prompt, actual browser storage quota behavior, operating-system suspension behavior, signed-in TikTok hydration availability, request signing, live API schemas, server-side deletion results, account enforcement or a safe sustained request budget.
+## Authorization and cancellation
 
-## Current API investigation
+Website scripts, other extensions, local file HTML and subframes cannot supply an accepted sender identity. Optional tab URL metadata is not used as document authority. No externally_connectable or web_accessible_resources is declared.
 
-The reference's current public main source was inspected via the web on the audit date. It still names the same listing and deletion paths and hydration fields. This is evidence of upstream implementation intent, **not** live API validation:
+Each batch has exact numeric IDs, a random capability, five-minute pre-use expiry, acknowledgement and a trusted extension-origin click. Progressive mode waits for a new approval at every batch. POST checks the current account context, active phase and unconsumed ID again. No approval or loop is restored after interruption.
 
-- [Current upstream listing source](https://raw.githubusercontent.com/gabireze/tiktok-all-reposted-videos-remover/main/script.js)
-- [Current upstream deletion source](https://raw.githubusercontent.com/gabireze/tiktok-all-reposted-videos-remover/main/background.js)
+Each HTTP request has a unique controller/ID and a 20-second timeout for headers/body. Stop aborts the parent and every active request, resolves pending progressive approval waits, drains the loop and revokes authority. Pause blocks subsequent dispatch. Durable intent is stored before dispatch; storage failure prevents deletion. Stop during that write or a spacing delay cannot dispatch the pending POST.
 
-The new implementation deliberately does not use the upstream MAIN-world fetch/event listener. TikTok may rely on page instrumentation for request signing; isolated fetch may be rejected. It stops rather than bypassing such checks. This compatibility limitation must be resolved by an explicitly permitted real-account read-only scan and then a separately approved small removal test; successful mocked tests do not resolve it.
+A monotonic clock enforces configured minimum dispatch spacing across scan/removal/batch boundaries. HTTP 429 cooldown is independently enforced by preparation, approval and request dispatch. Retry-After is bounded to a finite stored timestamp. No POST is automatically retried; a missing acknowledgement can conceal an applied action.
 
-Chrome documentation consulted: [content-script origin requests](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests), [isolated worlds](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts), [service-worker lifetime](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle), [Tabs API permissions](https://developer.chrome.com/docs/extensions/reference/api/tabs).
+Successful empty POST bodies, supported by the reference, are only acknowledgements. Complete fresh listing is still required to count removal. Partial absence, missing arrays, errors and timeouts cannot prove removal. Accepted/in-flight interruptions become uncertain and are excluded from repeat approval until reconciled.
 
-## Remaining risk and next step
+## Storage and error privacy
 
-### 1.0.1 partial-result change
+Local checkpoint fields are whitelisted: options, account identifier, numeric outcome IDs/status/timestamps, cooldown, counts/status. They may reveal activity and filter choices. Pending candidate lists, complete descriptions, credentials, CSRF and approval capabilities are excluded. Session storage contains the connected tab ID only. No sync storage is used.
 
-The user's screenshot showed a format failure after 2,487 discovered videos. No raw response or account tokens were requested or collected, so the exact live schema difference is unknown. The parser now accepts explicit boolean/numeric/string pagination flags and retains individually validated IDs when pagination/list structure becomes unusable. Missing fields are not interpreted as proof that the list ended. Numeric IDs remain mandatory; malformed records never reach authorization. Partial status is shown in the dashboard and approval text, with unknown full totals. Auth/rate/security and raw parsing failures still revoke eligibility. Partial eligibility, pending IDs and approval capabilities are not checkpointed or restored. New UI rejects an old 1.0.0 agent until the TikTok document is refreshed.
+Restore validates IDs/records/account/settings/cooldown and cannot start a job. Invalid options fall back to defaults. Invalid account-bound history is discarded. Source must be refreshed/rescanned after switching accounts; hydration content is not a cryptographic proof of live session identity.
 
-Verification only uses absence as evidence after complete pagination. A partial verification leaves absent attempted IDs uncertain and disallows repeating them in subsequent approvals until a fresh scan reconciles them. A partial rescan also cannot promote an absent uncertain ID to verified removed. No permission, external destination, session-token handling, page-event authorization or automatic retry was added. Live deletion remains untested by the agent; the screenshot establishes partial listing behavior only.
+Unknown status values and raw response bodies are not reflected into errors. Missing-list diagnostics contain only a fixed set of field names and types. Unexpected injected exceptions produce fixed bounded text. UI timeouts and stale polling do not replay actions.
 
-Account-theft behavior: none identified in reviewed source or fixture tests; no absolute safety claim. Implementation risks addressed: unauthorized page event commands removed, consent isolated, batch IDs bounded, timeout and Stop abort tracked requests, no overlapping deletion retries, no automatic recovery deletion. Remaining account-action risk is material because approved removal is destructive and TikTok controls its undocumented interface.
+## Remaining limitations
 
-Before real use: load unpacked after the user's installation approval, verify Chrome reports no extension errors and matches this manifest, perform a user-approved read-only live scan, then ask for explicit authorization for a five-item real removal test. Do not begin thousands of removals based solely on this report. Every subsequent batch still requires a fresh user confirmation in the extension UI.
+Live private-API signing may differ between isolated fetch and the reference's page-world fetch. No bypass or signing/session-token extraction is added. A successful fixture is not live API evidence. Actual extension registration/permissions, real storage quotas, tab suspension, TikTok enforcement, server-side cancellation and safe sustained rates need live validation.
+
+A missing Reposts tab or missing list alone does not diagnose rate limiting. HTTP 429 does. Users should stop repeatedly scanning on unusable responses and wait before one read-only retest.
+
+An accepted server action cannot be undone by abort. OS/renderer compromise, malicious other software, malicious server data or edited local extension files are outside this design. Existing page code can manipulate hydration DOM; no new page-triggered deletion channel is granted.
+
+Source/syntax/manifest checks, 114 automated tests, eight intercepted-network Chrome scenarios, original-asset checks and installed Defender are recorded in VALIDATION.txt. Antivirus is supporting evidence only, not a browser-account authorization audit.

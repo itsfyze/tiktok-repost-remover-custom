@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "interactiveFixture": "switch",
+  "browser": "155.0.8059.85",
+  "mode": "Real Chrome UI and isolated-world integration with only mocked TikTok responses and Chrome extension APIs; no account actions.",
+  "posts": 1,
+  "requests": [
+    {
+      "host": "www.tiktok.com",
+      "path": "/@fixture",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "connectionFixture": "stop",
+  "browser": "155.0.8059.85",
+  "mode": "Fresh Chrome with mocked APIs/TikTok. Try to stop works while status replies are missing, aborts after one accepted request and excludes uncertain work from retry. No real account actions.",
+  "posts": 1,
+  "errors": [],
+  "requests": [
+    {
+      "host": "www.tiktok.com",
+      "path": "/@fixture",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    }
+  ]
+}

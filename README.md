@@ -1,81 +1,74 @@
-# Repost Reset — personal TikTok repost remover
+# Repost Reset 1.0.5
 
-New, local Manifest V3 implementation. No build, npm install, server, CDN, login form, telemetry, or subscription. The original reference repository is unchanged.
+Source-only Chrome extension for listing TikTok reposts and removing exact, reviewed batches. Removing a repost does not delete the original video.
 
-## Installation
+**Reviewed source preview:** automated tests and intercepted-network Chrome scenarios pass. Live TikTok compatibility, account enforcement and a sustained safe request rate are not established by those tests. No claim of zero bugs is made. See [release notes](RELEASE_NOTES.md), [review findings](REVIEW-2026-10-26.md), [security review](SECURITY.md) and [reference comparison](UPSTREAM_REFERENCE.md).
 
-Prepared destination: `C:\Users\dominic\Downloads\TikTokRepostRemoverCustom`.
+## Install or update
 
-1. In Chrome, open `chrome://extensions`.
-2. Turn on **Developer mode**.
-3. Click **Load unpacked**.
-4. Select the `TikTokRepostRemoverCustom` folder itself, containing `manifest.json`.
-5. Confirm the card reads **Repost Reset — Personal TikTok Remover**, version **1.0.1**, with no Errors button. If Errors appears, inspect it before connecting to your account.
-6. In Details, check site access is only **https://www.tiktok.com/**. The declared API permissions are only `scripting` and `storage`. There is no `tabs`, cookies, history, downloads, or debugger permission.
-7. Pin the extension if desired and open its popup. The ↗ button opens the same dashboard in a Chrome tab.
+No compilation, production dependencies, subscription or developer server is required. Use source files directly, not a Web Store extension or precompiled CRX.
 
-No extension has been installed into your normal profile during development. Its actual installed permissions and Chrome service-worker registration still require validation after loading. To uninstall, click Remove on its card; checkpoint/configuration storage is removed with the extension. To update this local source later, review changes first and click Reload on its card. Stop any job before updating.
+For an existing installation:
 
-## First use — read-only
+1. Stop work. If the old dashboard is unresponsive, refresh TikTok to interrupt it. Accepted requests cannot be undone.
+2. Back up the already-loaded source folder, then replace its files with this version. Keep the same extension card/folder to retain local outcome history.
+3. Open chrome://extensions and click **Reload** on that card. Refresh TikTok and close old dashboard tabs.
+4. Open the popup, verify **v1.0.5**, Connect, then optionally use the arrow to open the dashboard in a tab.
+5. Run a fresh read-only scan to reconcile uncertain previous attempts. Do not immediately repeat an old uncertain batch.
 
-1. You open TikTok in Chrome and navigate to **your own profile**. Sign in yourself if necessary. The extension does not sign you in or request your password.
-2. Keep one intended TikTok profile tab active. Open the extension and click **Connect**. It attaches to the active TikTok tab (or an existing profile tab if none is active). Close other TikTok tabs if selection is ambiguous.
-3. Click **Scan reposts · dry run**. This only lists reposts. No deletion listener or automatic job is installed in the page's MAIN world.
-4. If account context, session, rate limits, transport, JSON parsing, or TikTok security checks fail, the job stops and removal stays disabled. Do not try to bypass challenges or security checks.
-5. If a successful JSON listing later has an unrecognized list or pagination format, previously validated videos are retained as a **partial scan**. You can review a batch of those known video IDs. A count such as **2487+** is a lower bound, not your full total. The full remaining count stays unknown.
-6. Missing/invalid video IDs never become removal candidates. Explicit boolean, numeric and string pagination flags are interpreted without treating the string `"false"` as true. An ambiguous flag is never silently assumed to mean the scan is complete.
+For a first installation, enable Developer mode at chrome://extensions, choose **Load unpacked**, and select the folder containing manifest.json. Check Chrome reports no errors and matches the permissions below. Open the dashboard through the extension; double-clicking popup.html in File Explorer does not create an authorized extension page.
 
-## Removal — only after you explicitly authorize real actions
+The source ZIP and SHA-256 are under dist/ in the GitHub repository. Keep archives and backups outside the loaded source directory. The prepared local folder is Downloads/TikTokRepostRemoverCustom-1.0.5.
 
-Development did not authorize or perform any real removals. Start with a batch limit of **5** only when you decide to test real removal. Default delay is 5 seconds; minimum 3 seconds is a conservative local bound, **not a TikTok-approved rate**.
+## Use
 
-- Adjust delay (3–120 seconds), next-batch limit (5/10/25/50/100 or custom 1–1000), and optional comma-separated description keywords. Matching is case-insensitive; any keyword matches. Empty filter selects all reposts.
-- Click **Start removing…** to prepare a batch. This does not delete anything.
-- Review the complete list of exact IDs and descriptions in the extension popup, check the acknowledgement, and click **Confirm removal**. Approval expires in five minutes. The only IDs allowed are those in that one approved batch.
-- The extension removes sequentially with the configured delay, then lists again to verify disappearance. An accepted request is not counted as verified removed until verification succeeds. Remaining IDs or ambiguous operations are not silently counted as success.
-- Partial verification can prove that a video is still listed, but cannot prove that a missing video was removed. Such attempts stay **uncertain** and are excluded from another batch until a fresh scan reconciles them. You may still approve other known videos. A complete verification is required to confirm disappearance.
-- **Each further batch requires another review and confirmation**. There is no unlimited unattended approval. Thousands of reposts can be processed through successive approved batches of up to 1000.
-- Pause prevents subsequent requests; a currently running request can finish. Resume only continues the same live paused job. Stop aborts all tracked active requests and cancels waiting work. **An action already accepted by TikTok cannot be reversed.**
-- Closing the popup leaves an approved job running in the connected TikTok tab. Reopen it to monitor, pause or stop. Closing/reloading/navigating away from the TikTok tab interrupts the job; a browser request may already have reached TikTok.
-- After interruption, click Connect and Scan again. Local checkpoints restore settings and outcome history, never an approval or a running deletion loop. Fresh scanning reconciles uncertain outcomes. If the account changed, previous account history is discarded from the active job.
+Open your own profile at https://www.tiktok.com, sign in yourself, keep that tab open, and Connect. The extension never signs you in or asks for your password. After switching accounts, refresh TikTok and scan again.
 
-## Rate limits, failures and API compatibility
+- **Scan reposts · dry run:** discovery only; no removal is authorized. The website's Reposts tab does not need to be visible or clicked.
+- **Stop scan & keep results:** abort discovery and retain validated candidates in memory; full totals remain unknown.
+- **Remove found so far…:** stop/drain an active dry scan, then prepare known results for review. The button itself deletes nothing.
+- **Start removing…:** prepare a filtered batch from complete/eligible partial results. Review every ID, check the acknowledgement and explicitly confirm. Approval expires after five minutes and applies to that batch only.
+- **Scan & remove as you go…:** discover, wait for batch review/confirmation, remove those exact IDs, and continue discovery. Every further batch asks again. Listings/removals never overlap; pagination restarts after mutation. The configured cap applies to each batch, not the entire session.
+- **Pause / Resume:** block subsequent dispatch; an in-flight request may finish. **Stop** aborts requests and waiting work, but cannot undo an accepted action.
 
-HTTP 429 halts the job and records a cooldown honoring Retry-After, with a minimum 60 seconds and a conservative 1-hour fallback. An HTTP-date value is also understood. It never automatically restarts deletion after cooldown. Rescan and approve again. HTTP 401/403, nonzero TikTok status, empty/non-JSON responses, timeouts and network/server failures also halt; no security checks are bypassed and no deletion is automatically retried. Only a structural listing/pagination problem after at least one validated video allows partial results to remain eligible.
+The five-second default delay is configurable from 3–120 seconds and enforced across request/batch boundaries. Batch caps are 1–1000, with optional case-insensitive description keywords. These are local bounds, not TikTok-approved rates.
 
-TikTok's internal web endpoints are undocumented and may change or require website-specific signing. Current upstream source was inspected, but authenticated live listing and removal were **not tested**. In particular, moving fetches entirely into Chrome's isolated world avoids the insecure MAIN-world event bridge, but may not receive TikTok's page-world request instrumentation/signing. If TikTok rejects these requests, the extension stops; it does not fall back to remote code, security bypasses, credential extraction, or a page event bridge. A permitted real-account read-only scan is the next compatibility check.
+**Verified removed** requires a complete fresh listing proving absence. A successful POST acknowledgement, including an empty successful response, is not proof. Partial absence remains uncertain; presence proves still listed. Uncertain attempts are excluded from repeat approval until a fresh listing reconciles them. In progressive mode, full verification follows discovery, so accepted operations may remain unverified until then.
 
-The account and CSRF context must be present in TikTok's JSON hydration script. If a site version only exposes context in a page-global variable, this implementation stops with a clear error rather than introducing MAIN-world access.
+## Errors and recovery
 
-## Data stored locally
+HTTP **429** halts work and honors Retry-After (minimum 60 seconds; one-hour fallback). Cooldown is checked before preparation, approval and dispatch. Nothing resumes deletion automatically. A missing list or website tab alone does not confirm a rate limit. Avoid repeatedly scanning when TikTok returns unusable data.
 
-Chrome local storage contains settings, the TikTok public account identifier used to bind history, per-video IDs/outcomes/timestamps, cooldown and status. It does **not** store credentials, cookies, CSRF tokens, pending approvals, or complete repost descriptions. TikTok's browser session supplies authentication; the CSRF token exists transiently in isolated memory and goes only to TikTok's removal endpoint. No sync storage or developer server is used.
+401/403, challenges, nonzero statuses, transport errors, timeouts and non-JSON listings halt. No security/signing bypass is attempted. A successful first-page JSON response without a usable list gets at most one delayed read-only retry at the same cursor. POSTs are never automatically retried.
 
-Chrome session storage holds one connected tab ID, surviving worker suspension. A second job cannot be connected in another tab while this agent is reachable. No script is injected automatically into all TikTok pages. To switch the connected tab, stop first and close the old TikTok tab, then Connect again.
+Only explicitly named root/data itemList or item_list arrays with explicit pagination are supported. Missing/ambiguous lists never establish a complete empty account. Previously validated results can remain partial after a later structural failure. Diagnostics contain fixed field names/types, not response values or tokens.
 
-## Tests
+Lost contact labels counters as last known, leaves **Reconnect** and **Try to stop** available, and disables new approvals. Reconnect checks the same job without replaying removal. An unanswered UI command times out after 30 seconds; it may already have applied. Refresh TikTok to interrupt an unreachable agent, then reconnect and scan to reconcile.
 
-Built-in Node tests, no install required:
+## Permissions and data
 
-```powershell
-node --test .\tests\security.test.cjs
-```
+| Permission | Purpose |
+|---|---|
+| scripting | Inject/invoke local isolated-world agent, frame zero, on explicit Connect. |
+| storage | Local settings/outcomes and session connected-tab lease. |
+| https://www.tiktok.com/* | Exact HTTPS host for the selected tab and same-origin requests. |
 
-Optional real-Chrome integration using an existing Playwright installation:
+No cookies, tabs, history, debugger, downloads, clipboard, wildcard hosts or optional permissions. No tracking, external server, remote script, sync storage or automatic updater. Browser cookies go only to TikTok without code reading/exporting them. CSRF stays transient in isolated memory and goes only to TikTok's removal endpoint.
 
-```powershell
-$env:PLAYWRIGHT_MODULE = 'C:\path\to\existing\node_modules\playwright'
-$env:CHROME_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-$env:TEST_OUTPUT = 'C:\path\to\test-artifacts'
-node .\tests\browser-smoke.cjs
-```
+Local checkpoints contain account identifier, video outcomes, options and cooldown. This can reveal activity/keywords; do not publish checkpoints. Approvals, running loops, pending candidates, full descriptions and credentials are not restored.
 
-The browser test creates a fresh, account-free browser context. It mocks TikTok network responses and Chrome extension APIs, while testing the actual popup in Chrome and the actual agent in a real isolated JavaScript world. It is not a loaded-extension test, a personal account test, or proof that live endpoints work. It records screenshots and sanitized fixture-only request paths. Do not adapt it to use a personal Chrome profile or authentication tokens.
+## Development checks
 
-Icons are original and generated using Node built-ins by `node .\tools\generate-icons.cjs`; already-generated PNGs are included. No compilation is required.
+Run with an existing Node installation; no dependencies needed:
 
-See `SECURITY.md` for the source review, request inventory, test coverage and limitations.
+    node --test ./tests/*.test.cjs
 
-## Updating from 1.0.0
+Optional browser integration uses already-installed Chrome and Playwright. Set PLAYWRIGHT_MODULE to that existing module's path, optionally CHROME_PATH and TEST_OUTPUT, then:
 
-Stop any active job first. Extract the **1.0.1** ZIP into the extension folder you originally selected in Load unpacked (replace those source files), then open `chrome://extensions` and click **Reload** on Repost Reset. Refresh the connected TikTok tab as well: its old isolated script cannot be hot-swapped safely. Open the popup, check **v1.0.1**, click Connect and run Scan again. The old failed scan's in-memory candidates cannot be recovered from the screenshot; the fresh scan will retain valid results even if the same later format problem recurs. Nothing restarts deletion automatically. Start with a five-item review and confirm only when you decide to remove those videos.
+    node ./tests/browser-smoke.cjs
+
+Use a fresh shell/unset previous fixture variables. Options: REPOST_PARTIAL_FIXTURE=1; REPOST_INTERACTIVE_FIXTURE=stop|switch|stream; REPOST_CONNECTION_FIXTURE=1|stop; or REPOST_DASHBOARD_FIXTURE=1 with optional REPOST_LIST_FIXTURE=transient.
+
+Tests use actual Chrome UI/isolated JavaScript but mocked extension APIs and intercepted TikTok responses. They do not establish actual extension registration, real storage quotas, live API signing or account behavior. Original icons can be regenerated with tools/generate-icons.cjs. No production build is required.
+
+Historical local-build notes are retained as history; this README and the 1.0.5 notes describe the current version.

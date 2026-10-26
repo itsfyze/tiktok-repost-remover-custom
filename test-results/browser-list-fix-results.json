@@ -1,0 +1,56 @@
+{
+  "passed": true,
+  "dashboardFixture": true,
+  "listFixture": "transient",
+  "browser": "155.0.8059.85",
+  "mode": "Chrome with mocked extension APIs/TikTok. Popup Expand opens a separate dashboard; popup closes; dashboard sender omits tab URL; five exact fixture removals complete and verify. No real account actions or extension registration.",
+  "posts": 5,
+  "errors": [],
+  "requests": [
+    {
+      "host": "www.tiktok.com",
+      "path": "/@fixture",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    }
+  ]
+}

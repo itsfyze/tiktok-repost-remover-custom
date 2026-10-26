@@ -1,16 +1,29 @@
-Repost Reset 1.0.1
-Unit/security tests: 48 passed, 0 failed.
-Chrome full-scan integration: PASS; mocked extension APIs and TikTok responses.
-Chrome partial-scan integration: PASS; malformed later page, approved known IDs, uncertain verification, and a separately approved next batch.
-No real account, credentials, or repost removal used.
+Repost Reset 1.0.5 reviewed source preview
+Review date: 2026-10-26
+Node tests: 114 passed, 0 failed. No dependencies installed.
 Syntax PASS: agent.js
 Syntax PASS: background.js
 Syntax PASS: core.js
 Syntax PASS: popup.js
 Syntax PASS: browser-smoke.cjs
+Syntax PASS: connection.test.cjs
+Syntax PASS: listing-format.test.cjs
+Syntax PASS: review.test.cjs
 Syntax PASS: security.test.cjs
+Syntax PASS: streaming.test.cjs
 Syntax PASS: generate-icons.cjs
-Manifest JSON: PASS; v1.0.1; same scripting/storage permissions and exact TikTok host.
+Manifest/permission/host/icon references: PASS
+Chrome 155.0.8059.85 scenario full : PASS (mocked APIs/intercepted requests)
+Chrome 155.0.8059.85 scenario partial : PASS (mocked APIs/intercepted requests)
+Chrome 155.0.8059.85 scenario stop : PASS (mocked APIs/intercepted requests)
+Chrome 155.0.8059.85 scenario switch : PASS (mocked APIs/intercepted requests)
+Chrome 155.0.8059.85 scenario stream : PASS (mocked APIs/intercepted requests)
+Chrome 155.0.8059.85 scenario connection : PASS (mocked APIs/intercepted requests)
+Chrome 155.0.8059.85 scenario connection-stop : PASS (mocked APIs/intercepted requests)
+Chrome 155.0.8059.85 scenario dashboard : PASS (mocked APIs/intercepted requests)
+Semgrep and ESLint not installed; no scanner/dependency installed. Manual full source review, Node syntax/security regression checks and native Defender used.
+No real account, live TikTok traffic, authentication values, normal-profile registration or real removal used. Live API signing, account enforcement and sustained safe rate remain UNKNOWN.
 Scan starting...
 Scan finished.
-Scanning C:\Users\dominic\Documents\Codex\2026-10-24\ai-agent-task-full-security-audit\custom-extension found no threats.
+Scanning <reviewed-source> found no threats.
+

@@ -1,0 +1,8 @@
+*.pem
+*.key
+*.crx
+node_modules/
+browser-profile/
+profile/
+checkpoint*.json
+runtime-validation*/

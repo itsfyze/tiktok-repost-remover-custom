@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "connectionFixture": true,
+  "browser": "155.0.8059.85",
+  "mode": "Fresh Chrome with mocked APIs and TikTok; lost status replies after first of five removals, recovered same live job, all five verified. No real requests or account actions.",
+  "posts": 5,
+  "errors": [],
+  "requests": [
+    {
+      "host": "www.tiktok.com",
+      "path": "/@fixture",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/tiktok/v1/upvote/delete",
+      "method": "POST"
+    },
+    {
+      "host": "www.tiktok.com",
+      "path": "/api/repost/item_list/",
+      "method": "GET"
+    }
+  ]
+}
